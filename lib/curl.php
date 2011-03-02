@@ -9,7 +9,8 @@
  * @author Sean Huber <shuber@huberry.com>
  * @author Fabian Grassl
 **/
-class Curl {
+class Curl
+{
 
   /**
    * The file to read and write cookies to for requests
@@ -62,6 +63,14 @@ class Curl {
   protected $error = '';
 
   /**
+   * Whether to validate SSL certificates
+   *
+   * @var boolean
+   * @access protected
+  **/
+  protected $validate_ssl = false;
+
+  /**
    * Stores resource handle for the current CURL request
    *
    * @var resource
@@ -79,6 +88,18 @@ class Curl {
   {
     $this->user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : 'Curl/PHP '.PHP_VERSION.' (http://github.com/shuber/curl)';
   }
+
+  /**
+   * Weather to validate ssl certificates
+   *
+   * @param bool $val whether to validate SSL certificates
+   * @return void
+  **/
+  public function setValidateSsl($val)
+  {
+    return $this->validate_ssl = $val;
+  }
+
 
   /**
    * Get the user agent to send along with requests
@@ -396,6 +417,23 @@ class Curl {
   **/
   protected function setRequestOptions($url, $method, $vars, $put_data)
   {
+    $purl = parse_url($url);
+
+    if ($purl['scheme'] == 'https')
+    {
+      curl_setopt($this->request, CURLOPT_PORT , empty($purl['port'])?443:$purl['port']);
+      if ($this->validate_ssl)
+      {
+        curl_setopt($this->request,CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($this->request, CURLOPT_CAINFO, dirname(__FILE__).'/cacert.pem');
+      }
+      else
+      {
+        curl_setopt($this->request, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($this->request, CURLOPT_SSL_VERIFYHOST, 2);
+      }
+    }
+
     $method = strtoupper($method);
     switch ($method)
     {
@@ -449,6 +487,7 @@ class Curl {
     curl_setopt($this->request, CURLOPT_HEADER, true);
     curl_setopt($this->request, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($this->request, CURLOPT_USERAGENT, $this->user_agent);
+    curl_setopt($this->request, CURLOPT_TIMEOUT, 30);
 
     if ($this->cookie_file)
     {
