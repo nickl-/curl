@@ -78,6 +78,13 @@ class Curl {
     protected $userpwd = false;
 
     /**
+     * Sets curl_setopt($curl, CURLOPT_VERBOSE, 1);
+     * @var boolean
+     * @access public
+    **/
+    public $debug = false;
+
+    /**
      * Initializes a Curl object
      *
      * Sets the $cookie_file to "curl_cookie.txt" in the current directory
@@ -171,6 +178,7 @@ class Curl {
         $this->request = curl_init();
         if (is_array($post_vars)) $vars = http_build_query($vars, '', '&');
         if (is_array($put_data)) $put_data = http_build_query($put_data, '', '&');
+        if($this->debug) curl_setopt($this->request, CURLOPT_VERBOSE, 1);
 
 
         $this->set_request_options($url, $method, $post_vars, $put_data);
