@@ -79,19 +79,32 @@ class Curl {
 
     /**
      * Sets curl_setopt($curl, CURLOPT_VERBOSE, 1);
+     *
      * @var boolean
      * @access public
     **/
-    public $debug = false;
+    public static $debug = false;
 
+    /**
+     * Whether to parse header information or not.
+     *
+     * @var boolean
+     * @access public
+    **/
+    public static $with_headers = false;
+    
     /**
      * Initializes a Curl object
      *
-     * Sets the $cookie_file to "curl_cookie.txt" in the current directory
      * Also sets the $user_agent to $_SERVER['HTTP_USER_AGENT'] if it exists, 'Curl/PHP '.PHP_VERSION.' (http://github.com/shuber/curl)' otherwise
+     *
+     * @param debug - turn debug on - will collect a debug log in the response.
+     * @param with_headers - switch whether to collect headers or not.
     **/
-    function __construct() {
+    function __construct($debug = false, $with_headers = false) {
         $this->user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : 'Curl/PHP '.PHP_VERSION.' (http://github.com/shuber/curl)';
+        self::$debug = $debug;
+        self::$with_headers = $with_headers;
     }
 
     /**
@@ -180,6 +193,11 @@ class Curl {
         if (is_array($put_data)) $put_data = http_build_query($put_data, '', '&');
         if($this->debug) curl_setopt($this->request, CURLOPT_VERBOSE, 1);
 
+        if (self::$verbose||self::$with_headers) {
+          $out = fopen("php://temp", 'rw');
+          $this->options['CURLOPT_STDERR'] = $out;
+          $this->options['CURLOPT_VERBOSE'] = true;
+        }
 
         $this->set_request_options($url, $method, $post_vars, $put_data);
         $this->set_request_headers();
@@ -189,7 +207,15 @@ class Curl {
           throw new CurlException(curl_error($this->request), curl_errno($this->request));
         }
 
-        $response = new CurlResponse($response);
+        if (isset($out)) {
+            rewind($out);
+            $outstr = stream_get_contents($out);
+            fclose($out);
+            $response = new CurlResponse($response, $outstr);
+            unset($outstr);
+        } else {
+            $response = new CurlResponse($response);
+        }
 
         curl_close($this->request);
 
@@ -267,12 +293,12 @@ class Curl {
         if (!empty($purl['scheme']) && $purl['scheme'] == 'https') {
             curl_setopt($this->request, CURLOPT_PORT , empty($purl['port'])?443:$purl['port']);
             if ($this->validate_ssl) {
-              curl_setopt($this->request,CURLOPT_SSL_VERIFYPEER, true);
-              curl_setopt($this->request, CURLOPT_CAINFO, dirname(__FILE__).'/cacert.pem');
-          } else {
-              curl_setopt($this->request, CURLOPT_SSL_VERIFYPEER, false);
-              curl_setopt($this->request, CURLOPT_SSL_VERIFYHOST, 2);
-          }
+                curl_setopt($this->request,CURLOPT_SSL_VERIFYPEER, true);
+                curl_setopt($this->request, CURLOPT_CAINFO, dirname(__FILE__).'/cacert.pem');
+            } else {
+                curl_setopt($this->request, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($this->request, CURLOPT_SSL_VERIFYHOST, 2);
+            }
         }
 
         $method = strtoupper($method);
@@ -287,7 +313,7 @@ class Curl {
             }
             curl_setopt($this->request, CURLOPT_POSTFIELDS, $vars);
         } elseif ('POST' == $method) {
-          throw new InvalidArgumentException('POST-vars must be set for a POST-Request.');
+           throw new InvalidArgumentException('POST-vars must be set for a POST-Request.');
         }
 
 
@@ -295,14 +321,14 @@ class Curl {
           if ('PUT' != $method) {
             throw new InvalidArgumentException('PUT-data may only be set for a PUT-Request.');
           }
-          curl_setopt($this->request, CURLOPT_INFILE, $put_data->getResource());
-          curl_setopt($this->request, CURLOPT_INFILESIZE, $put_data->getResourceSize());
+            curl_setopt($this->request, CURLOPT_INFILE, $put_data->getResource());
+            curl_setopt($this->request, CURLOPT_INFILESIZE, $put_data->getResourceSize());
         } elseif ('PUT' == $method) {
             throw new InvalidArgumentException('PUT-data must be set for a PUT-Request.');
         }
 
         # Set some default CURL options
-        curl_setopt($this->request, CURLOPT_HEADER, true);
+        curl_setopt($this->request, CURLOPT_HEADER, false);
         curl_setopt($this->request, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($this->request, CURLOPT_USERAGENT, $this->user_agent);
         curl_setopt($this->request, CURLOPT_TIMEOUT, 30);

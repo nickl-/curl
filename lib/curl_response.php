@@ -17,11 +17,25 @@ class CurlResponse {
     public $body = '';
 
     /**
+     * The debug log view if any.
+     *
+     * @var string
+    **/
+    public $debug_log = '';
+
+    /**
      * An associative array containing the response's headers
      *
      * @var array
     **/
     public $headers = array();
+
+    /**
+     * An array containing the raw request and response headers
+     *
+     * @var array
+    **/
+    public $all_headers = array();
 
     /**
      * Accepts the result of a curl request as a string
@@ -35,41 +49,42 @@ class CurlResponse {
      * @param string $response
     **/
     function __construct($response) {
-        do {
-          list($header, $response) = explode("\r\n\r\n", $response, 2);
-          # handle 1xx responses and 3xx redirects
-          list($statusLine) = explode("\r\n", $header, 2);
-        } while (!empty($response) && preg_match('/\h((1|3)\d{2})\h/',$statusLine));
-        
-        # Headers regex
-        $pattern = '#HTTP/\d\.\d.*?$.*?\r\n\r\n#ims';
+        if (isset($outstr)) {
+            if (Curl::$debug) {
+                $this->debug_log = \preg_replace('/^([^\*|>|<])/m', '> $1', $outstr);
+            }
+            if (Curl::$with_headers) {
+                $outstr = preg_replace('/\*.*$/m', '', $outstr);
 
-        # Extract headers from response
-        preg_match_all($pattern, $response, $matches);
-        $headers_string = array_pop($matches[0]);
-        $headers = explode("\r\n", str_replace("\r\n\r\n", '', $headers_string));
+                preg_match_all('/>[^<]*|<[^>]*/', $outstr, $matches);
+                $matches = array_map(function ($a){
+                    return preg_replace('/<\s*|>\s*/m', '', $a);
+                }, $matches[0]);
+                $ttt = $matches;
+                if (($last = end($matches)) !== false) {
+                    $this->all_headers = $matches;
+                    # Extract headers from response
+                    preg_match_all('/\w.*$/m', end($this->all_headers), $matches);
+                    reset($this->all_headers);
+                    $headers = array_pop($matches);
+                    # Extract the version and status from the first header
+                    $status = trim(array_shift($headers));
+                    $this->headers['Status-Line'] = $status;
+                    $status = preg_split('/\s/', $status, 3);
+                    $this->headers['Http-Version'] = $status[0];
+                    $this->headers['Status-Code'] = $status[1];
+                    $this->headers['Reason-Phrase'] = $status[2];
 
-        # Inlude all received headers in the $headers_string
-        while (count($matches[0])) {
-          $headers_string = array_pop($matches[0]).$headers_string;
+                    # Convert headers into an associative array
+                    foreach ($headers as $header) {
+                      preg_match('/(.*?)\:\s(.*)\r/', $header, $matches);
+                      $this->headers[$matches[1]] = $matches[2];
+                    }
+                }
+            }
         }
 
-        # Remove all headers from the response body
-        $this->body = str_replace($headers_string, '', $response);
-
-        # Extract the version and status from the first header
-        $version_and_status = array_shift($headers);
-        preg_match('#HTTP/(\d\.\d)\s(\d\d\d)\s(.*)#', $version_and_status, $matches);
-        $this->headers['Http-Version'] = $matches[1];
-        $this->headers['Status-Code'] = $matches[2];
-        $this->headers['Status'] = $matches[2].' '.$matches[3];
-
-        # Convert headers into an associative array
-        foreach ($headers as $header) {
-            preg_match('#(.*?)\:\s(.*)#', $header, $matches);
-            $this->headers[$matches[1]] = $matches[2];
-        }
-
+        $this->body = $response;
     }
 
     /**
